@@ -2,10 +2,12 @@
 // Connects to Monday.com Initiatives (L1) board and renders initiative selector
 // Board ID: 18404668601 | Owner: Porter Nellans | Built for AyaOne /sas route
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const MONDAY_ENDPOINT = "https://api.monday.com/v2";
 const CLAUDE_ENDPOINT = "https://api.anthropic.com/v1/messages";
+const MONDAY_TOKEN = import.meta.env.VITE_MONDAY_TOKEN;
+const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_KEY;
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 const DRAFT_STATUS_OPTIONS = ["Working on it", "At Risk", "Done", "No status"];
 const DRAFT_SYSTEM_PROMPT = `You are drafting a monthly update card for a BI leadership review 
@@ -523,11 +525,9 @@ function extractClaudeText(payload) {
 }
 
 export default function MBiRBuilder() {
-  const [mondayToken, setMondayToken] = useState("");
-  const [claudeKey, setClaudeKey] = useState("");
   const [initiatives, setInitiatives] = useState([]);
   const [draftCards, setDraftCards] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
 
@@ -538,41 +538,63 @@ export default function MBiRBuilder() {
   const hasLoadedData = initiatives.length > 0;
   const selectedCount = selectedInitiatives.length;
 
-  async function handleConnect() {
-    setIsLoading(true);
-    setError("");
+  useEffect(() => {
+    let isMounted = true;
 
-    try {
-      const response = await fetch(MONDAY_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: mondayToken,
-        },
-        body: JSON.stringify({ query: MONDAY_QUERY }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok || payload.errors) {
-        const message = payload.errors?.[0]?.message || `Monday request failed with status ${response.status}`;
-        throw new Error(message);
+    async function loadInitiatives() {
+      if (!MONDAY_TOKEN || !CLAUDE_KEY) {
+        setError("Configuration error — contact Porter.");
+        setIsLoading(false);
+        return;
       }
 
-      const items = payload.data?.boards?.[0]?.items_page?.items;
+      setIsLoading(true);
+      setError("");
 
-      if (!Array.isArray(items)) {
-        throw new Error("Monday response did not include initiative items.");
+      try {
+        const response = await fetch(MONDAY_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: MONDAY_TOKEN,
+          },
+          body: JSON.stringify({ query: MONDAY_QUERY }),
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || payload.errors) {
+          const message = payload.errors?.[0]?.message || `Monday request failed with status ${response.status}`;
+          throw new Error(message);
+        }
+
+        const items = payload.data?.boards?.[0]?.items_page?.items;
+
+        if (!Array.isArray(items)) {
+          throw new Error("Monday response did not include initiative items.");
+        }
+
+        if (isMounted) {
+          setInitiatives(items.map(mapMondayItemToInitiative));
+        }
+      } catch (requestError) {
+        if (isMounted) {
+          setInitiatives([]);
+          setError(requestError instanceof Error ? requestError.message : "Unable to connect to Monday.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
-
-      setInitiatives(items.map(mapMondayItemToInitiative));
-    } catch (requestError) {
-      setInitiatives([]);
-      setError(requestError instanceof Error ? requestError.message : "Unable to connect to Monday.");
-    } finally {
-      setIsLoading(false);
     }
-  }
+
+    loadInitiatives();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   function toggleInitiative(id) {
     setInitiatives((currentInitiatives) =>
@@ -610,7 +632,7 @@ export default function MBiRBuilder() {
       const response = await fetch(CLAUDE_ENDPOINT, {
         method: "POST",
         headers: {
-          "x-api-key": claudeKey,
+          "x-api-key": CLAUDE_KEY,
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
           "anthropic-dangerous-direct-browser-access": "true",
@@ -666,8 +688,8 @@ export default function MBiRBuilder() {
   }
 
   async function generateDrafts() {
-    if (!claudeKey.trim()) {
-      setError("Enter a Claude API key before generating drafts.");
+    if (!CLAUDE_KEY) {
+      setError("Configuration error — contact Porter.");
       return;
     }
 
@@ -799,43 +821,11 @@ export default function MBiRBuilder() {
           <p style={styles.subtitle}>BI State of Play · Edition 4 · June 2026</p>
 
           <div style={styles.connectionPanel}>
-            <label style={styles.field}>
-              <span style={styles.fieldLabel}>Monday API Token</span>
-              <input
-                style={styles.input}
-                type="password"
-                value={mondayToken}
-                onChange={(event) => setMondayToken(event.target.value)}
-                autoComplete="off"
-              />
-            </label>
-
-            <label style={styles.field}>
-              <span style={styles.fieldLabel}>Claude API Key</span>
-              <input
-                style={styles.input}
-                type="password"
-                value={claudeKey}
-                onChange={(event) => setClaudeKey(event.target.value)}
-                autoComplete="off"
-              />
-            </label>
-
             {hasLoadedData ? (
               <span style={styles.connectedBadge}>Connected</span>
-            ) : (
-              <button
-                style={{
-                  ...styles.button,
-                  ...(isLoading || !mondayToken.trim() ? styles.buttonDisabled : null),
-                }}
-                type="button"
-                onClick={handleConnect}
-                disabled={isLoading || !mondayToken.trim()}
-              >
-                {isLoading ? "Connecting" : "Connect"}
-              </button>
-            )}
+            ) : isLoading ? (
+              <span style={styles.connectedBadge}>Connecting</span>
+            ) : null}
           </div>
 
           {error ? <p style={styles.error}>{error}</p> : null}
@@ -929,11 +919,11 @@ export default function MBiRBuilder() {
             <button
               style={{
                 ...styles.button,
-                ...(selectedCount === 0 || isGenerating || !claudeKey.trim() ? styles.buttonDisabled : null),
+                ...(selectedCount === 0 || isGenerating || !CLAUDE_KEY ? styles.buttonDisabled : null),
               }}
               type="button"
               onClick={generateDrafts}
-              disabled={selectedCount === 0 || isGenerating || !claudeKey.trim()}
+              disabled={selectedCount === 0 || isGenerating || !CLAUDE_KEY}
             >
               {isGenerating ? "Generating" : "Generate Drafts →"}
             </button>
