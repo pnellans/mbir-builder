@@ -8,7 +8,7 @@ const MONDAY_ENDPOINT = "https://api.monday.com/v2";
 const CLAUDE_ENDPOINT = "https://api.anthropic.com/v1/messages";
 const MONDAY_TOKEN = import.meta.env.VITE_MONDAY_TOKEN;
 const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_KEY;
-const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+const CLAUDE_MODEL = "claude-sonnet-4-5";
 const DRAFT_STATUS_OPTIONS = ["Working on it", "At Risk", "Done", "No status"];
 const DRAFT_SYSTEM_PROMPT = `You are drafting a monthly update card for a BI leadership review 
 document presented to the CFO. The audience wants to know what actually 
