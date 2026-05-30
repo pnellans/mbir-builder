@@ -41,6 +41,9 @@ query {
           id
           text
           value
+          ... on BoardRelationValue {
+            linked_item_ids
+          }
         }
       }
     }
@@ -60,6 +63,9 @@ query {
           id
           text
           value
+          ... on BoardRelationValue {
+            linked_item_ids
+          }
         }
         updates(limit: 1) {
           body
@@ -489,6 +495,13 @@ function extractStoryHealth(columnValues) {
 function findLinkedInitiativeIds(columnValues, initiativeIdSet) {
   const matched = [];
   for (const col of columnValues || []) {
+    if (Array.isArray(col.linked_item_ids)) {
+      for (const id of col.linked_item_ids) {
+        const strId = String(id);
+        if (initiativeIdSet.has(strId)) matched.push(strId);
+      }
+      continue;
+    }
     if (!col.value) continue;
     try {
       const parsed = JSON.parse(col.value);
@@ -497,9 +510,7 @@ function findLinkedInitiativeIds(columnValues, initiativeIdSet) {
         const id = typeof lp === "number" ? String(lp) : String(lp?.linkedPulseId || "");
         if (id && initiativeIdSet.has(id)) matched.push(id);
       }
-    } catch {
-      // skip unparseable column values
-    }
+    } catch {}
   }
   return matched;
 }
